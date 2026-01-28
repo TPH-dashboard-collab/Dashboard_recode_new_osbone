@@ -249,15 +249,15 @@ sf::sf_use_s2(TRUE)
       Admn1_N == "Atacora" ~ "Atacora",
       Admn1_N == "Ouémé"   ~ "Oueme",
       TRUE ~ Admn1_N
-    )
-  )
+    ))
 
 #Admin2_gSimplify <- sp::SpatialPolygonsDataFrame(Admin2_rg, Admin2_df)
 #New:
 # Admin2_rg já é um objeto sf completo com dados e geometria
 # Não precisa fazer nada mais!
 # Se precisar renomear:
-Admin2_gSimplify <- Admin2_rg
+Admin2_gSimplify <- Admin2_rg %>%
+  left_join(Admin2_df, by = "sub")
 
 #AdminZS <- file.path("./Data_prio/shapefiles/BEN_ZS_dissolved_Shp_BEN.shp") %>% readOGR(verbose = FALSE)
 #New:
