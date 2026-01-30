@@ -195,13 +195,13 @@ percentReductionPR.acrossScenarios <- function(allSims
 
 setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 
+sf_use_s2(FALSE)
+# Carregar dados
 averted_cases <- readRDS("./Data_prio/averted_popDPAF.rds")
-
 ZScommune <- readRDS("./Data_prio/correpondence_ZS_commune.rds")
 
-# allow for Bembereke and Sinende to switch from PMC pilot to SMC in 2026
 eligible <- readRDS("./Data_prio/eligible_communes.rds") %>%
-  mutate(SMC=ifelse(sub%in%c("bembereke","sinende"),TRUE,SMC))
+  mutate(SMC = ifelse(sub %in% c("bembereke","sinende"), TRUE, SMC))
 
 avertedZS <- readRDS("./Data_prio/averted_ZS_popDPAF.rds") %>%
   left_join(eligible %>% select(-sub) %>% distinct())
@@ -216,105 +216,64 @@ avertedsub_PBOstandard <- readRDS("./Data_prio/averted_PBOtostandard2026_sub_pop
   left_join(eligible)
 
 pop <- readRDS("./Data_prio/popDPAF.rds")
-
 cases <- readRDS("./Data_prio/simple_severe_popDPAF.rds")
-
 PfPR <- readRDS("./Data_prio/PfPR0to5.rds")
 
-#Admin2 <- file.path("./Data_prio/shapefiles/communes.shp") %>% readOGR(verbose = FALSE)
-#New:
-Admin2 <- sf::st_read(
-  "./Data_prio/shapefiles/communes.shp",
-  quiet = TRUE
-)
+# Shapefiles com sf (moderno)
+Admin2 <- st_read("./Data_prio/shapefiles/communes.shp", quiet = TRUE)
 
-#this things to make shapefile lighter
-#Admin2_rg = rgeos::gSimplify(Admin2, tol = 0.02, topologyPreserve = TRUE)
-#New:
-#Admin2_rg = sf::st_simplify(Admin2, dTolerance = 0.02, preserveTopology = TRUE)
-# Desativar s2, corrigir geometria e simplificar
-sf::sf_use_s2(FALSE)
-Admin2_valid <- sf::st_make_valid(Admin2)
-Admin2_rg <- sf::st_simplify(Admin2_valid, dTolerance = 0.02, preserveTopology = TRUE)
-sf::sf_use_s2(TRUE)
-#Admin2_df <- Admin2@data %>% mutate(sub=tolower(NAME1_),
-#                                    Admin1=case_when(Admn1_N=="Kouffo" ~ "Couffo",
-#                                                     Admn1_N=="Atakora" ~ "Atacora",
-#                                                     Admn1_N=="OuÃ©mÃ©" ~ "Oueme",
- #                                                    TRUE ~ Admn1_N))
- #New:
- Admin2_df <- Admin2 %>%
-  mutate( sub = tolower(NAME1_), Admin1 = case_when(
-      Admn1_N == "Kouffo"  ~ "Couffo",
-      Admn1_N == "Atacora" ~ "Atacora",
-      Admn1_N == "Ouémé"   ~ "Oueme",
+# Simplificar geometria
+Admin2_rg <- st_simplify(Admin2, dTolerance = 0.02, preserveTopology = TRUE)
+
+# Processar dados
+Admin2_df <- Admin2 %>%
+  st_drop_geometry() %>%
+  mutate(
+    sub = tolower(NAME1_),
+    Admin1 = case_when(
+      Admn1_N == "Kouffo" ~ "Couffo",
+      Admn1_N == "Atakora" ~ "Atacora",
+      Admn1_N == "OuÃ©mÃ©" ~ "Oueme",
       TRUE ~ Admn1_N
     )
-)
+  )
 
-#Admin2_gSimplify <- sp::SpatialPolygonsDataFrame(Admin2_rg, Admin2_df)
-#New:
-# Admin2_rg já é um objeto sf completo com dados e geometria
-# Não precisa fazer nada mais!
-# Se precisar renomear:
-Admin2_gSimplify <- Admin2_rg
+Admin2_gSimplify <- Admin2_rg %>%
+  left_join(Admin2_df, by = names(Admin2_df)[names(Admin2_df) != "sub" & names(Admin2_df) != "Admin1"])
 
-#AdminZS <- file.path("./Data_prio/shapefiles/BEN_ZS_dissolved_Shp_BEN.shp") %>% readOGR(verbose = FALSE)
-#New:
-AdminZS <- sf::st_read(
-  "./Data_prio/shapefiles/BEN_ZS_dissolved_Shp_BEN.shp",
-  quiet = TRUE
-)
+# Processar ZS
+AdminZS <- st_read("./Data_prio/shapefiles/BEN_ZS_dissolved_Shp_BEN.shp", 
+                   quiet = TRUE)
 
-#to merge ZS of Cotonou
-AdminZS$ZS <- ifelse(grepl("COTONOU",AdminZS$ZS),"COTONOU",AdminZS$ZS)
-#AdminZS_df <- AdminZS@data %>% mutate(Admin1=case_when(NEW_DEPT=="Ou?m?" ~ "Oueme",
-#                                                     TRUE ~ NEW_DEPT)) %>% distinct(Admin1,ZS)
-#New:
-AdminZS_df <- AdminZS %>% 
-  st_drop_geometry() %>%  # Remove a geometria, deixa só os dados
-  mutate(Admin1 = case_when(
-    NEW_DEPT == "Ouémé" ~ "Oueme",
-    TRUE ~ NEW_DEPT
-  )) %>% 
-  dplyr::select(Admin1, ZS)
+# Unir geometrias de Cotonou e criar AdminZS_df
+AdminZS_df <- AdminZS %>%
+  st_drop_geometry() %>%
+  mutate(
+    ZS = ifelse(grepl("COTONOU", ZS), "COTONOU", ZS),
+    Admin1 = case_when(
+      NEW_DEPT == "Ou?m?" ~ "Oueme",
+      TRUE ~ NEW_DEPT
+    )
+  ) %>%
+  distinct(Admin1, ZS)
 
-#this things to make shapefile lighter
-#AdminZS_COT <- rgeos::gUnaryUnion(AdminZS, id = AdminZS$ZS)
-#AdminZS_rg = rgeos::gSimplify(AdminZS_COT, tol = 0.02, topologyPreserve = TRUE)
-#AdminZS_gSimplify <- sp::SpatialPolygonsDataFrame(AdminZS_COT, AdminZS_df,match.ID = "ZS")
-
-#AdminZS_gSimplify@data <- AdminZS_gSimplify@data %>%
-#  rename(ZS_CHAI="ZS") %>%
-#  left_join(eligible %>% select(ZS_CHAI,ZS,nameZS) %>% distinct())
-
-#New:
-# Simplificar shapefile com sf
-sf::sf_use_s2(FALSE)
-
-# Corrigir geometrias inválidas
-AdminZS_valid <- sf::st_make_valid(AdminZS)
-
-# Unir geometrias por ZS (equivalente ao gUnaryUnion)
-AdminZS_COT <- AdminZS_valid %>%
+# Unir geometrias
+AdminZS_COT <- AdminZS %>%
+  mutate(ZS = ifelse(grepl("COTONOU", ZS), "COTONOU", ZS)) %>%
   group_by(ZS) %>%
-  summarise(geometry = st_union(geometry), .groups = 'drop')
+  summarise(geometry = st_union(geometry), .groups = "drop")
 
-# Simplificar (equivalente ao gSimplify)
-AdminZS_rg <- sf::st_simplify(AdminZS_COT, dTolerance = 0.02, preserveTopology = TRUE)
+# Simplificar
+AdminZS_rg <- st_simplify(AdminZS_COT, dTolerance = 0.02, preserveTopology = TRUE)
 
-sf::sf_use_s2(TRUE)
-
-# Adicionar os dados do AdminZS_df
+# Combinar com dados
 AdminZS_gSimplify <- AdminZS_rg %>%
-  left_join(AdminZS_df, by = "ZS")
-
-# Renomear e fazer join com eligible
-AdminZS_gSimplify <- AdminZS_gSimplify %>%
+  left_join(AdminZS_df, by = "ZS") %>%
   rename(ZS_CHAI = ZS) %>%
-  left_join(eligible %>% select(ZS_CHAI, ZS, nameZS) %>% distinct(), 
+  left_join(eligible %>% select(ZS_CHAI, ZS, nameZS) %>% distinct(),
             by = "ZS_CHAI")
-#futrs <- readRDS("./Data_prio/futrs.rds")
+
+sf_use_s2(TRUE)
 
 ```
 
